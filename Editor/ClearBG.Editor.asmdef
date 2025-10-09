@@ -1,0 +1,18 @@
+{
+    "name": "ClearBG.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:db7e20c942ec9aa4ba382a2f96c7753d"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
