@@ -78,6 +78,16 @@ namespace ClearBG.Runtime.Scripts.Managers
             }
         }
         /// <summary>
+        /// Enables or disables the always on top.
+        /// </summary>
+        /// <param name="value">Set to <c>true</c> to enable , <c>false</c> to disable it.</param>
+        public static void SetAlwaysOnTop(bool value)
+        {
+            if (!_clearBg) return;
+            _settings.AlwaysOnTop = value;
+            _clearBg.SetAlwaysOnTopEnabled(value);
+        }
+        /// <summary>
         /// Activates the ClearBG overlay if it exists,
         /// or creates and initializes a new one if necessary.
         /// </summary>
@@ -115,6 +125,20 @@ namespace ClearBG.Runtime.Scripts.Managers
         /// Returns -1 if ClearBG is not initialized.
         /// </summary>
         public static int GetMonitorIndex => _clearBg ? _clearBg.TargetMonitor : -1;
+        /// <summary>
+        /// Retrieves performance statistics for the ClearBG overlay rendering.
+        /// </summary>
+        /// <param name="cpuTimeMs">Output parameter for CPU time in milliseconds.</param>
+        /// <param name="cpuFeature">Output parameter for GPU time in milliseconds.</param
+        public static void GetPerformanceStats(out float cpuTimeMs, out int cpuFeature)
+        {
+            cpuTimeMs = -2;
+            cpuFeature = -2;
+            if (!_clearBg) return;
+            _clearBg.GetPerformance(out cpuTimeMs, out cpuFeature);
+        }
+        
+        
          /// <summary>
          /// Retrieves the active <see cref="ClearBgSettings"/> instance.
          /// </summary>

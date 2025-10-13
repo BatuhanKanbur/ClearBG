@@ -2,12 +2,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using ClearBG.Runtime.Scripts.Managers;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ClearBG.Runtime.Scripts.Behaviours
 {
     public class DebugCanvas : MonoBehaviour
     {
         [SerializeField] private RectTransform leftIndicator, rightIndicator, topIndicator, bottomIndicator,taskbarIndicator;
+        [SerializeField] private Text cpuPerformanceText,cpuFeaturesText;
+        [SerializeField] private Toggle toggleOverlay;
         [SerializeField] private Transform cubeObject;
         private CancellationTokenSource _cts = new CancellationTokenSource();
 
@@ -16,14 +19,31 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             _cts = new CancellationTokenSource();
             cubeObject.transform.SetParent(null);
             cubeObject.transform.localScale = Vector3.one;
+            toggleOverlay.isOn = ClearBgManager.GetSettings().AlwaysOnTop;
             UpdateRects();
         }
 
         private void Update()
         {
             cubeObject.Rotate(new Vector3(15, 30, 45) * Time.deltaTime);
+            if(Time.frameCount % ClearBgManager.GetSettings().TargetFPS * 2 != 0) return;
+            ClearBgManager.GetPerformanceStats( out var cpuMs, out var cpuFeature);
+            switch (cpuFeature)
+            {
+                case -2:
+                    cpuPerformanceText.text = "ClearBG Disabled";
+                    cpuFeaturesText.text = "ClearBG Disabled";
+                    break;
+                case -1:
+                    cpuPerformanceText.text = "ClearBG Unsupported on Editor";
+                    cpuFeaturesText.text = "ClearBG Unsupported on Editor";
+                    break;
+                default:
+                    cpuPerformanceText.text = $"CPU Latency : {Mathf.Clamp(cpuMs,0,Mathf.Infinity):0} ms";
+                    cpuFeaturesText.text = (cpuFeature & 2)!=0 ? "CPU Feature : AVX2 Active!" : "CPU Feature : SSE3 Activate!";
+                    break;
+            }
         }
-
         private async void UpdateRects()
         {
             try
@@ -68,14 +88,11 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             {
             }
         }
-
-
         private void OnDestroy()
         {
             _cts?.Cancel();
             _cts?.Dispose();
         }
-
         public void LeftMonitor()
         {
             ClearBgManager.SetMonitorIndex(ClearBgManager.GetMonitorIndex - 1);
@@ -89,10 +106,14 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             ClearBgManager.ActivateClearBg();
             UpdateRects();
         }
-
         public void DeactivateOverlay()
         {
             ClearBgManager.DeactivateClearBg();
+        }
+        public void ToggleOverlay()
+        {
+            if(ClearBgManager.GetSettings().AlwaysOnTop != toggleOverlay.isOn)
+                ClearBgManager.SetAlwaysOnTop(toggleOverlay.isOn);
         }
     }
 }

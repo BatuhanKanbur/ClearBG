@@ -17,6 +17,11 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         #endif
         private static extern bool InitOverlay(int monitorIndex);
         #if UNITY_STANDALONE_WIN
+        [DllImport("TransparentPlugin.dll", CallingConvention = CallingConvention.Cdecl)]
+        #endif
+        private static extern void SetAlwaysOnTop(bool enable);
+        
+        #if UNITY_STANDALONE_WIN
         [DllImport("TransparentPlugin.dll")]
         #endif
         private static extern void OverlayUpdate();
@@ -40,6 +45,10 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         [DllImport("TransparentPlugin.dll")]
         #endif
         private static extern bool IsOverlayActive();
+        #if UNITY_STANDALONE_WIN
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void GetPerformanceStats(out float avgFrameTime, out int cpuFeatures);
+        #endif
         
         public int TargetMonitor { get; private set; }
 
@@ -67,8 +76,9 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Debug.LogError("<color=red>Overlay initialization failed.</color>");
                 return;
             }
+            if(_settings.AlwaysOnTop)
+                SetAlwaysOnTop(true);
             #endif
-
             Debug.Log("<color=green>Overlay plugin initialized.</color>");
             Prepare();
         }
@@ -86,12 +96,20 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             Camera.targetTexture = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGB32);
             #endif
             SceneManager.sceneLoaded += OnActiveSceneChanged;
-            var firstCanvas = FindObjectsOfType<ClearBgCanvas>(true).FirstOrDefault(c => !c.transform.parent);
-            if (firstCanvas) Canvas ??= firstCanvas.canvas;
-            Canvas ??= FindObjectOfType<Canvas>();
+            var prefab = Resources.Load<GameObject>("ClearBG_Canvas");
+            if (!prefab)
+            {
+                Debug.LogError("<color=red>ClearBG Canvas prefab missing!</color>");
+                return;
+            }
+            Canvas = Instantiate(prefab).GetComponent<Canvas>();
+            DontDestroyOnLoad(Canvas);
+            Canvas.worldCamera = Camera;
+            Canvas.planeDistance = Camera.nearClipPlane + 0.01f;
             if (_settings.CanvasAutoConvert)
                 ConvertAllCanvas();
             Application.targetFrameRate = _settings.TargetFPS;
+            Application.runInBackground = true;
             #if UNITY_EDITOR
             MonitorData = ClearBgManager.GetDefaultMonitorData();
             #else
@@ -181,6 +199,30 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             }
             SetOverlayActive(enable);
         }
+        public void SetAlwaysOnTopEnabled(bool enable)
+        {
+            #if UNITY_EDITOR
+            Debug.Log("<color=yellow>Always on top enabling/disabling is disabled in the editor. </color>");
+            return;
+            #endif
+            if (!Initialized) return;
+            SetAlwaysOnTop(enable);
+        }
+        public void GetPerformance(out float avgFrameTime, out int cpuFeatures)
+        {
+            #if UNITY_EDITOR
+            avgFrameTime = -1f;
+            cpuFeatures = -1;
+            return;
+            #endif
+            if (!Initialized)
+            {
+                avgFrameTime = 0f;
+                cpuFeatures = -2;
+                return;
+            }
+            GetPerformanceStats(out avgFrameTime, out cpuFeatures);
+        }
         private void OnDestroy()
         {
             if (!Initialized) return;
@@ -197,8 +239,6 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             if (!Initialized) return;
             if (!Camera)
                 Camera = Camera.main;
-            Canvas = FindObjectsOfType<ClearBgCanvas>().FirstOrDefault(c => !c.transform.parent).canvas;
-            Canvas ??= FindObjectOfType<Canvas>();
             if (_settings.CanvasAutoConvert)
                 ConvertAllCanvas();
         }
@@ -216,7 +256,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Debug.LogError("<color=red>Main Camera does not exist.</color>");
             return Camera;
         }
-        private void Update()
+        private void LateUpdate()
         {
             if (!Initialized || !Camera || !Camera.targetTexture) return;
             #if UNITY_EDITOR
