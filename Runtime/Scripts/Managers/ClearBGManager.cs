@@ -205,9 +205,9 @@ namespace ClearBG.Runtime.Scripts.Managers
             RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRect, screenTopLeftUI, cameraParam, out var localTopLeft);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRect, screenBottomRightUI, cameraParam, out var localBottomRight);
             uiRect.Left = localTopLeft.x;
-            uiRect.Top = localTopLeft.y + data.taskbarEdge;
             uiRect.Right = localBottomRight.x;
-            uiRect.Bottom = localBottomRight.y + data.taskbarEdge;
+            uiRect.Top = localTopLeft.y;
+            uiRect.Bottom = localBottomRight.y;
             uiRect.Size = new Vector2(uiRect.Right - uiRect.Left, uiRect.Top - uiRect.Bottom);
         }
         /// <summary>

@@ -9,7 +9,6 @@ namespace ClearBG.Runtime.Scripts.Structures
         public bool DebugMode = false;
         public bool AlwaysOnTop = true;
         public bool ClickThrough = true;
-        public bool CanvasAutoConvert = true;
         public int TargetFPS = 60;
         public int TargetDisplay = 0;
         private static ClearBgSettings _instance;

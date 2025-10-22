@@ -12,7 +12,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         [SerializeField] private Text cpuPerformanceText,cpuFeaturesText;
         [SerializeField] private Toggle toggleOverlay;
         [SerializeField] private Transform cubeObject;
-        private CancellationTokenSource _cts = new CancellationTokenSource();
+        private CancellationTokenSource _cts = new();
 
         private void Start()
         {
@@ -80,7 +80,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                             break;
                     }
 
-                    await Task.Delay(1000, cancellationToken: _cts.Token);
+                    await Task.Delay(5000, cancellationToken: _cts.Token);
                     cubeRandomPosIndex++;
                 }
             }

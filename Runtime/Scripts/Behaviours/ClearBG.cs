@@ -1,11 +1,10 @@
 using System;
-using System.Linq;
+using System.Collections;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using ClearBG.Runtime.Scripts.Managers;
 using ClearBG.Runtime.Scripts.Structures;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace ClearBG.Runtime.Scripts.Behaviours
@@ -14,55 +13,53 @@ namespace ClearBG.Runtime.Scripts.Behaviours
     {
         #if UNITY_STANDALONE_WIN
         [DllImport("TransparentPlugin.dll")]
-        #endif
         private static extern bool InitOverlay(int monitorIndex);
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll", CallingConvention = CallingConvention.Cdecl)]
-        #endif
+        
+        [DllImport("TransparentPlugin.dll")]
         private static extern void SetAlwaysOnTop(bool enable);
         
-        #if UNITY_STANDALONE_WIN
         [DllImport("TransparentPlugin.dll")]
-        #endif
         private static extern void OverlayUpdate();
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        #endif
-        private static extern void BlitRawRGBA(IntPtr data, int width, int height);
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        #endif
-        private static extern void SetMonitorIndex(int monitorIndex);
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        #endif
-        private static extern MonitorData GetMonitorData(int monitorIndex);
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        #endif
-        private static extern void SetOverlayActive(bool enable);
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        #endif
-        private static extern bool IsOverlayActive();
-        #if UNITY_STANDALONE_WIN
-        [DllImport("TransparentPlugin.dll")]
-        private static extern void GetPerformanceStats(out float avgFrameTime, out int cpuFeatures);
-        #endif
         
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void BlitRawRGBA(IntPtr data, int width, int height);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void SetMonitorIndex(int monitorIndex);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern MonitorData GetMonitorData(int monitorIndex);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void SetOverlayActive(bool enable);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern bool IsOverlayActive();
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void GetPerformanceStats(out float avgFrameTime, out int pluginOverhead);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void SetClickthrough(bool enable);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern void UpdateClickthroughFromAlpha(float alphaValue);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern bool IsClickthroughEnabled();
+        #endif
         public int TargetMonitor { get; private set; }
-
-        private Texture2D _rtTex;
-        private Color32[] _pixelBuffer;
-        private GCHandle _handle;
         public bool Initialized { get; private set; }
-        public Camera Camera {get; private set;}
+        public Camera Camera { get; private set; }
         public Canvas Canvas { get; private set; }
-        private ClearBgSettings _settings;
-        private CameraClearFlags _clearFlags;
-        private Color _backgroundColor;
         public MonitorData MonitorData { get; private set; }
-
+        private ClearBgSettings _settings;
+        private CameraClearFlags _originalClearFlags;
+        private Color _originalBackgroundColor;
+        private RenderTexture _originalTargetTexture;
+        private Texture2D _pixelReadTexture;
+        private Rect _pixelReadRect = new Rect(0, 0, 1, 1);
+        private Coroutine _clickthroughCoroutine;
         public void Initialize()
         {
             if (Initialized) return;
@@ -76,24 +73,30 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Debug.LogError("<color=red>Overlay initialization failed.</color>");
                 return;
             }
-            if(_settings.AlwaysOnTop)
+            if (_settings.AlwaysOnTop)
                 SetAlwaysOnTop(true);
             #endif
             Debug.Log("<color=green>Overlay plugin initialized.</color>");
             Prepare();
         }
+
         private async void Prepare()
         {
             Camera = await GetMainCamera();
-            #if!UNITY_EDITOR
-            _rtTex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false);
-            _pixelBuffer = new Color32[Screen.width * Screen.height];
-            _handle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
-            _clearFlags = Camera.clearFlags;
-            _backgroundColor = Camera.backgroundColor;
-            Camera.clearFlags = CameraClearFlags.Color;
-            Camera.backgroundColor = Color.clear;
-            Camera.targetTexture = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGB32);
+            if (!Camera)
+            {
+                Debug.LogError("<color=red>Cannot initialize without main camera!</color>");
+                return;
+            }
+            _originalClearFlags = Camera.clearFlags;
+            _originalBackgroundColor = Camera.backgroundColor;
+            _originalTargetTexture = Camera.targetTexture;
+            #if !UNITY_EDITOR
+            Camera.clearFlags = CameraClearFlags.SolidColor;
+            Camera.backgroundColor = new Color(0, 0, 0, 0); // Transparent black
+            Camera.allowHDR = false; // CRITICAL for transparency
+            Camera.targetTexture = null;
+            _pixelReadTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             #endif
             SceneManager.sceneLoaded += OnActiveSceneChanged;
             var prefab = Resources.Load<GameObject>("ClearBG_Canvas");
@@ -106,8 +109,6 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             DontDestroyOnLoad(Canvas);
             Canvas.worldCamera = Camera;
             Canvas.planeDistance = Camera.nearClipPlane + 0.01f;
-            if (_settings.CanvasAutoConvert)
-                ConvertAllCanvas();
             Application.targetFrameRate = _settings.TargetFPS;
             Application.runInBackground = true;
             #if UNITY_EDITOR
@@ -116,131 +117,124 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             MonitorData = GetMonitorData(TargetMonitor);
             #endif
             Initialized = true;
-            if(_settings.CanvasAutoConvert)
-                ConvertAllCanvas();
-            Debug.Log("<color=green>Transparent plugin fully initialized!</color>");
-        }
-        private void ConvertAllCanvas()
-        {
-            var canvases = FindObjectsOfType<ClearBgCanvas>(true);
-            Canvas ??= canvases.FirstOrDefault(c => !c.transform.parent)?.canvas;
-            Canvas ??= FindObjectOfType<Canvas>();
-            foreach (var canvas in canvases)
-            {
-                if (canvas.canvas.renderMode != RenderMode.ScreenSpaceOverlay) continue;
-                canvas.canvas.renderMode = RenderMode.ScreenSpaceCamera;
-                if (!canvas.canvas.worldCamera)
-                    canvas.canvas.worldCamera = Camera;
-                canvas.canvas.planeDistance = Camera.nearClipPlane + 0.01f;
-            }
+            Debug.Log("<color=green>ClearBG fully initialized with DWM transparency + Pixel-based clickthrough!</color>");
+            #if !UNITY_EDITOR
+            _clickthroughCoroutine = StartCoroutine(ClickthroughLoop());
+            #endif
         }
         public void ChangeMonitor(int monitorIndex)
         {
             #if UNITY_EDITOR
-            Debug.Log("<color=yellow>Monitor changing is disabled in the editor. </color>");
+            Debug.Log("<color=yellow>Monitor changing is disabled in the editor.</color>");
             return;
             #endif
             if (!Initialized) return;
             var targetMonitor = Mathf.Clamp(monitorIndex, 0, Display.displays.Length - 1);
             TargetMonitor = targetMonitor;
-            MonitorData = GetMonitorData(TargetMonitor);
             SetMonitorIndex(TargetMonitor);
+            MonitorData = GetMonitorData(TargetMonitor);
+            Debug.Log($"<color=cyan>Switched to monitor {TargetMonitor}</color>");
         }
+
         public void SetOverlayEnabled(bool enable)
         {
             #if UNITY_EDITOR
-            Debug.Log("<color=yellow>Overlay enabling/disabling is disabled in the editor. </color>");
+            Debug.Log("<color=yellow>Overlay toggle is disabled in the editor.</color>");
             return;
             #endif
+            if (!Initialized) return;
             if (enable)
             {
-                _rtTex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false);
-                _pixelBuffer = new Color32[Screen.width * Screen.height];
-                _handle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
-                Camera.clearFlags = CameraClearFlags.Color;
-                Camera.backgroundColor = Color.clear;
-                Camera.targetTexture = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGB32);
+                Camera.clearFlags = CameraClearFlags.SolidColor;
+                Camera.backgroundColor = new Color(0, 0, 0, 0);
+                Camera.allowHDR = false;
+                Camera.targetTexture = null;
+                if (_pixelReadTexture == null)
+                {
+                    _pixelReadTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+                }
+                SetOverlayActive(true);
                 MonitorData = GetMonitorData(TargetMonitor);
+                if (_clickthroughCoroutine == null)
+                {
+                    _clickthroughCoroutine = StartCoroutine(ClickthroughLoop());
+                }
+                Debug.Log("<color=green>Overlay enabled (DWM transparency active)</color>");
             }
             else
             {
-                if (Camera && Camera.targetTexture)
+                Camera.clearFlags = _originalClearFlags;
+                Camera.backgroundColor = _originalBackgroundColor;
+                Camera.targetTexture = _originalTargetTexture;
+                if (_clickthroughCoroutine != null)
                 {
-                    Camera.targetTexture.Release();
-                    Camera.targetTexture = null;
+                    StopCoroutine(_clickthroughCoroutine);
+                    _clickthroughCoroutine = null;
                 }
-                if (_handle.IsAllocated)
-                    _handle.Free();
-                if (_rtTex)
-                    Destroy(_rtTex);
-                _rtTex = null;
-                _pixelBuffer = null;
-                var monitorData = new MonitorData
+                if (_pixelReadTexture)
                 {
-                    screenWidth = Screen.width,
-                    screenHeight = Screen.height,
-                    monitorLeft = 0,
-                    monitorTop = 0,
-                    monitorRight = Screen.width,
-                    monitorBottom = Screen.height,
-                    workLeft = 0,
-                    workTop = 0,
-                    workRight = Screen.width,
-                    workBottom = Screen.height - 40,
-                    taskbarLeft = 0,
-                    taskbarTop = Screen.height - 40,
-                    taskbarRight = Screen.width,
-                    taskbarBottom = Screen.height,
-                    taskbarEdge = 40
-                };
-                MonitorData = monitorData;
-                Camera.clearFlags = _clearFlags;
-                Camera.backgroundColor = _backgroundColor;
+                    Destroy(_pixelReadTexture);
+                    _pixelReadTexture = null;
+                }
+                SetOverlayActive(false);
+                MonitorData = ClearBgManager.GetDefaultMonitorData();
+                Debug.Log("<color=yellow>Overlay disabled (normal window mode)</color>");
             }
-            SetOverlayActive(enable);
         }
         public void SetAlwaysOnTopEnabled(bool enable)
         {
             #if UNITY_EDITOR
-            Debug.Log("<color=yellow>Always on top enabling/disabling is disabled in the editor. </color>");
+            Debug.Log("<color=yellow>Always on top is disabled in the editor.</color>");
             return;
             #endif
             if (!Initialized) return;
             SetAlwaysOnTop(enable);
         }
-        public void GetPerformance(out float avgFrameTime, out int cpuFeatures)
+
+        public void GetPerformance(out float avgFrameTime, out int pluginOverhead)
         {
             #if UNITY_EDITOR
             avgFrameTime = -1f;
-            cpuFeatures = -1;
+            pluginOverhead = -1;
             return;
             #endif
             if (!Initialized)
             {
                 avgFrameTime = 0f;
-                cpuFeatures = -2;
+                pluginOverhead = -2;
                 return;
             }
-            GetPerformanceStats(out avgFrameTime, out cpuFeatures);
+            GetPerformanceStats(out avgFrameTime, out pluginOverhead);
         }
         private void OnDestroy()
         {
             if (!Initialized) return;
             SceneManager.sceneLoaded -= OnActiveSceneChanged;
-            #if UNITY_EDITOR
-            Debug.Log("<color=red>ClearBG has been disposed.</color>");
-            return;
+            #if !UNITY_EDITOR
+            if (_clickthroughCoroutine != null)
+            {
+                StopCoroutine(_clickthroughCoroutine);
+                _clickthroughCoroutine = null;
+            }
+            if (_pixelReadTexture)
+            {
+                Destroy(_pixelReadTexture);
+                _pixelReadTexture = null;
+            }
+            if (Camera)
+            {
+                Camera.clearFlags = _originalClearFlags;
+                Camera.backgroundColor = _originalBackgroundColor;
+                Camera.targetTexture = _originalTargetTexture;
+            }
             #endif
-            if (_handle.IsAllocated)
-                _handle.Free();
+            Debug.Log("<color=red>ClearBG disposed.</color>");
         }
         private void OnActiveSceneChanged(Scene scene, LoadSceneMode loadSceneMode)
         {
             if (!Initialized) return;
             if (!Camera)
                 Camera = Camera.main;
-            if (_settings.CanvasAutoConvert)
-                ConvertAllCanvas();
         }
         private async Task<Camera> GetMainCamera()
         {
@@ -248,36 +242,40 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             while (!Camera && Time.time - start < 5f)
             {
                 Camera = Camera.main;
-                if (Camera)
-                    break;
+                if (Camera) break;
                 await Task.Yield();
             }
             if (!Camera)
                 Debug.LogError("<color=red>Main Camera does not exist.</color>");
             return Camera;
         }
+        private IEnumerator ClickthroughLoop()
+        {
+            while (true)
+            {
+                yield return new WaitForEndOfFrame();
+                if (!Initialized || !Camera || !IsOverlayActive() || _pixelReadTexture == null)
+                    continue;
+                var mousePos = Input.mousePosition;
+                mousePos.x = Mathf.Clamp(mousePos.x, 0, Screen.width - 1);
+                mousePos.y = Mathf.Clamp(mousePos.y, 0, Screen.height - 1);
+                _pixelReadRect.x = mousePos.x;
+                _pixelReadRect.y = mousePos.y;
+                _pixelReadTexture.ReadPixels(_pixelReadRect, 0, 0, false);
+                _pixelReadTexture.Apply();
+                var pixelColor = _pixelReadTexture.GetPixel(0, 0);
+                var alphaValue = pixelColor.a;
+                UpdateClickthroughFromAlpha(alphaValue);
+            }
+        }
         private void LateUpdate()
         {
-            if (!Initialized || !Camera || !Camera.targetTexture) return;
             #if UNITY_EDITOR
             return;
             #endif
-            if(!IsOverlayActive()) return;
+            if (!Initialized || !Camera) return;
+            if (!IsOverlayActive()) return;
             OverlayUpdate();
-            AsyncGPUReadback.Request(Camera.targetTexture, 0, TextureFormat.RGBA32, OnCompleteReadback);
-        }
-        private void OnCompleteReadback(AsyncGPUReadbackRequest request)
-        {
-            if (request.hasError || _pixelBuffer == null || !_handle.IsAllocated) return;
-            try
-            {
-                request.GetData<Color32>().CopyTo(_pixelBuffer);
-                BlitRawRGBA(_handle.AddrOfPinnedObject(), _rtTex.width, _rtTex.height);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ClearBG] GPU Readback skipped: {ex.Message}");
-            }
         }
     }
 }

@@ -2,6 +2,7 @@ using ClearBG.Runtime.Scripts.Behaviours;
 using ClearBG.Runtime.Scripts.Structures;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace ClearBG.Editor
 {
@@ -9,16 +10,76 @@ namespace ClearBG.Editor
     {
         private const string FirstOpenKey = "ClearBGSettings_FirstOpen";
         private ClearBgSettings _settings;
-        private readonly Vector2 _windowSize = new Vector2(450, 650);
+        private readonly Vector2 _windowSize = new(450, 800);
 
         [InitializeOnLoadMethod]
         private static void InitOnLoad()
         {
             if (EditorPrefs.HasKey(FirstOpenKey)) return;
             EditorPrefs.SetBool(FirstOpenKey, true);
+            ConfigurePlayerSettings();
             Open();
         }
-
+        private static void ConfigurePlayerSettings()
+        {
+            Debug.Log("<color=cyan>[ClearBG] Configuring Player Settings for transparent overlay...</color>");
+            var changedSomething = false;
+            if (PlayerSettings.GetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64))
+            {
+                PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64, false);
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Auto Graphics API disabled</color>");
+            }
+            var currentAPIs = PlayerSettings.GetGraphicsAPIs(BuildTarget.StandaloneWindows64);
+            if (currentAPIs.Length == 0 || currentAPIs[0] != GraphicsDeviceType.Direct3D11)
+            {
+                PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneWindows64, new[] { GraphicsDeviceType.Direct3D11 });
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Graphics API set to Direct3D11</color>");
+            }
+            if (PlayerSettings.useFlipModelSwapchain)
+            {
+                PlayerSettings.useFlipModelSwapchain = false;
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ DXGI Flip Model disabled (CRITICAL for transparency!)</color>");
+            }
+            if (PlayerSettings.fullScreenMode != FullScreenMode.FullScreenWindow)
+            {
+                PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Fullscreen Mode set to Fullscreen Window</color>");
+            }
+            if (!PlayerSettings.runInBackground)
+            {
+                PlayerSettings.runInBackground = true;
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Run In Background enabled</color>");
+            }
+            if (PlayerSettings.resizableWindow)
+            {
+                PlayerSettings.resizableWindow = false;
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Resizable Window disabled</color>");
+            }
+            if (PlayerSettings.colorSpace != ColorSpace.Linear)
+            {
+                PlayerSettings.colorSpace = ColorSpace.Linear;
+                changedSomething = true;
+                Debug.Log("<color=green>[ClearBG] ✓ Color Space set to Linear</color>");
+            }
+            if (PlayerSettings.SplashScreen.show)
+                PlayerSettings.SplashScreen.show = false;
+            if (changedSomething)
+            {
+                AssetDatabase.SaveAssets();
+                Debug.Log("<color=cyan>[ClearBG] ✓✓✓ Player Settings configured successfully! ✓✓✓</color>");
+                Debug.Log("<color=yellow>[ClearBG] You may need to restart Unity Editor for all changes to take effect.</color>");
+            }
+            else
+            {
+                Debug.Log("<color=green>[ClearBG] Player Settings already configured correctly!</color>");
+            }
+        }
         [MenuItem("Clear BG/Settings")]
         public static void Open()
         {
@@ -27,6 +88,12 @@ namespace ClearBG.Editor
             window.maxSize = window._windowSize;
             window.position = new Rect(100, 100, window._windowSize.x, window._windowSize.y);
             window.Show();
+        }
+        
+        [MenuItem("Clear BG/Configure Player Settings")]
+        public static void ConfigureSettings()
+        {
+            ConfigurePlayerSettings();
         }
 
         private void OnEnable()
@@ -48,7 +115,6 @@ namespace ClearBG.Editor
                     _settings = ClearBgSettings.GetOrCreateSettings();
                 return;
             }
-
             var headerRect = EditorGUILayout.GetControlRect(false, 70);
             DrawGradientRect(headerRect, new Color(0.1f, 0.5f, 0.9f, 1f), new Color(0.2f, 0.7f, 1f, 1f));
             var headerStyle = new GUIStyle(EditorStyles.boldLabel)
@@ -101,6 +167,17 @@ namespace ClearBG.Editor
 
             EditorGUILayout.Space(5);
             EditorGUILayout.Space(10);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Player Settings Configuration", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("ClearBG requires specific Player Settings to work correctly.", EditorStyles.miniLabel);
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("This will configure:", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("  • Graphics API → Direct3D11", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("  • DXGI Flip Model → OFF (critical!)", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("  • Fullscreen Mode → Fullscreen Window", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("  • Run In Background → ON", EditorStyles.miniLabel);
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Remember, this plugin does not work in editor mode, only in builds!",
                 EditorStyles.miniLabel);
@@ -115,29 +192,21 @@ namespace ClearBG.Editor
             _settings.ClickThrough = EditorGUILayout.Toggle("Click Through", _settings.ClickThrough);
             EditorGUILayout.LabelField("Allows clicks to pass through the overlay to windows beneath it.",
                 EditorStyles.miniLabel);
-            _settings.CanvasAutoConvert = EditorGUILayout.Toggle("Canvas Auto Convert", _settings.CanvasAutoConvert);
-            EditorGUILayout.LabelField("Automatically converts newly created Canvases to overlay compatible format.",
-                EditorStyles.miniLabel);
             _settings.TargetFPS = EditorGUILayout.IntField("Target FPS", _settings.TargetFPS);
             EditorGUILayout.LabelField("Limits the overlay rendering to the specified frames per second.",
                 EditorStyles.miniLabel);
             _settings.TargetDisplay = EditorGUILayout.IntField("Target Display", _settings.TargetDisplay);
             EditorGUILayout.LabelField("Specifies which monitor the overlay should render on.", EditorStyles.miniLabel);
-            GUILayout.Space(15);
+            EditorGUILayout.Space(20);
             if (GUILayout.Button("Save Settings", GUILayout.Height(35)))
             {
                 EditorUtility.SetDirty(_settings);
                 AssetDatabase.SaveAssets();
             }
-
-            if (GUILayout.Button("Convert All Canvases in Project", GUILayout.Height(35)))
+            if (GUILayout.Button("🔧 Auto Configure Player Settings", GUILayout.Height(40)))
             {
-                if (EditorUtility.DisplayDialog("Convert All Canvases",
-                        "This will add ClearBGCanvas component to all Canvas objects in the current scenes and all prefabs in the project. Are you sure you want to proceed?",
-                        "Yes", "No"))
-                {
-                    ConvertAllCanvases();
-                }
+                ConfigureSettings();
+                EditorUtility.SetDirty(_settings);
             }
         }
 
@@ -148,82 +217,6 @@ namespace ClearBG.Editor
             tex.Apply();
             GUI.DrawTexture(pos, tex);
             DestroyImmediate(tex);
-        }
-
-        private static void ConvertAllCanvases()
-        {
-            var targetType = typeof(ClearBgCanvas);
-            var addedCount = 0;
-            var skippedCount = 0;
-            var sceneCanvases = FindObjectsOfType<Canvas>(true);
-            foreach (var canvas in sceneCanvases)
-            {
-                if (canvas.GetComponent(targetType) == null)
-                {
-                    Undo.AddComponent(canvas.gameObject, targetType);
-                    addedCount++;
-                }
-                else
-                    skippedCount++;
-            }
-            var sceneGuids = AssetDatabase.FindAssets("t:Scene", new[] { "Assets" });
-            var currentScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path;
-
-            foreach (var guid in sceneGuids)
-            {
-                var scenePath = AssetDatabase.GUIDToAssetPath(guid);
-                if (scenePath == currentScenePath)
-                    continue;
-                var scene = UnityEditor.SceneManagement.EditorSceneManager.OpenScene(scenePath,
-                    UnityEditor.SceneManagement.OpenSceneMode.Additive);
-                var rootObjects = scene.GetRootGameObjects();
-                foreach (var rootObj in rootObjects)
-                {
-                    var canvases = rootObj.GetComponentsInChildren<Canvas>(true);
-                    foreach (var canvas in canvases)
-                    {
-                        if (canvas.GetComponent(targetType) == null)
-                        {
-                            Undo.AddComponent(canvas.gameObject, targetType);
-                            EditorUtility.SetDirty(canvas.gameObject);
-                            addedCount++;
-                        }
-                        else
-                            skippedCount++;
-                    }
-                }
-                UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
-                UnityEditor.SceneManagement.EditorSceneManager.CloseScene(scene, true);
-            }
-            var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" });
-            foreach (var guid in prefabGuids)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (!prefab) continue;
-
-                var prefabChanged = false;
-                var canvases = prefab.GetComponentsInChildren<Canvas>(true);
-                foreach (var canvas in canvases)
-                {
-                    if (canvas.GetComponent(targetType) == null)
-                    {
-                        Undo.AddComponent(canvas.gameObject, targetType);
-                        EditorUtility.SetDirty(canvas.gameObject);
-                        prefabChanged = true;
-                        addedCount++;
-                    }
-                    else
-                        skippedCount++;
-                }
-
-                if (!prefabChanged) continue;
-                EditorUtility.SetDirty(prefab);
-            }
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log($"✅ {addedCount} ClearBGCanvas was added to Canvas, ⏩ {skippedCount} already existed.");
         }
     }
 }
