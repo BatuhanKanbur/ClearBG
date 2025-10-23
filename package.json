@@ -1,7 +1,7 @@
 {
   "name": "com.batuhankanbur.clearbg",
   "displayName": "ClearBG",
-  "version": "2.0.1",
+  "version": "2.1.1",
   "unity": "2021.3",
   "description": "A lightweight and high-performance Unity plugin for transparent window rendering and taskbar-safe UI integration.",
   "keywords": [
