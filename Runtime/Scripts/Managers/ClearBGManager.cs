@@ -129,13 +129,11 @@ namespace ClearBG.Runtime.Scripts.Managers
         /// Retrieves performance statistics for the ClearBG overlay rendering.
         /// </summary>
         /// <param name="cpuTimeMs">Output parameter for CPU time in milliseconds.</param>
-        /// <param name="cpuFeature">Output parameter for GPU time in milliseconds.</param
-        public static void GetPerformanceStats(out float cpuTimeMs, out int cpuFeature)
+        public static void GetPerformanceStats(out float cpuTimeMs)
         {
             cpuTimeMs = -2;
-            cpuFeature = -2;
             if (!_clearBg) return;
-            _clearBg.GetPerformance(out cpuTimeMs, out cpuFeature);
+            _clearBg.GetPerformance(out cpuTimeMs);
         }
         
         

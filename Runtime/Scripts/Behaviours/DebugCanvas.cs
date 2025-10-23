@@ -9,7 +9,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
     public class DebugCanvas : MonoBehaviour
     {
         [SerializeField] private RectTransform leftIndicator, rightIndicator, topIndicator, bottomIndicator,taskbarIndicator;
-        [SerializeField] private Text cpuPerformanceText,cpuFeaturesText;
+        [SerializeField] private Text cpuPerformanceText;
         [SerializeField] private Toggle toggleOverlay;
         [SerializeField] private Transform cubeObject;
         private CancellationTokenSource _cts = new();
@@ -27,22 +27,13 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         {
             cubeObject.Rotate(new Vector3(15, 30, 45) * Time.deltaTime);
             if(Time.frameCount % ClearBgManager.GetSettings().TargetFPS * 2 != 0) return;
-            ClearBgManager.GetPerformanceStats( out var cpuMs, out var cpuFeature);
-            switch (cpuFeature)
-            {
-                case -2:
-                    cpuPerformanceText.text = "ClearBG Disabled";
-                    cpuFeaturesText.text = "ClearBG Disabled";
-                    break;
-                case -1:
-                    cpuPerformanceText.text = "ClearBG Unsupported on Editor";
-                    cpuFeaturesText.text = "ClearBG Unsupported on Editor";
-                    break;
-                default:
-                    cpuPerformanceText.text = $"CPU Latency : {Mathf.Clamp(cpuMs,0,Mathf.Infinity):0} ms";
-                    cpuFeaturesText.text = (cpuFeature & 2)!=0 ? "CPU Feature : AVX2 Active!" : "CPU Feature : SSE3 Activate!";
-                    break;
-            }
+            ClearBgManager.GetPerformanceStats( out var cpuMs);
+            if (Mathf.Approximately(cpuMs, -2f))
+                cpuPerformanceText.text = "ClearBG Not Activated!";
+            else if(Mathf.Approximately(cpuMs, -1f))
+                cpuPerformanceText.text = "ClearBG does not work on Editor Mode!";
+            else
+                cpuPerformanceText.text = $"CPU Latency : {Mathf.Clamp(cpuMs,0,Mathf.Infinity):0} ms";
         }
         private async void UpdateRects()
         {

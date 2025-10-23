@@ -84,8 +84,15 @@ namespace ClearBG.Editor
                     EditorGUILayout.LabelField("Enables debug logs for troubleshooting.", EditorStyles.miniLabel);
                     settings.AlwaysOnTop = EditorGUILayout.Toggle("Always On Top", settings.AlwaysOnTop);
                     EditorGUILayout.LabelField("Keeps the overlay window always on top of other windows.", EditorStyles.miniLabel);
-                    settings.ClickThrough = EditorGUILayout.Toggle("Click Through", settings.ClickThrough);
-                    EditorGUILayout.LabelField("Allows clicks to pass through the overlay to windows beneath it.", EditorStyles.miniLabel);
+                    EditorGUI.BeginChangeCheck();
+                    settings.ClickThroughThreshold = EditorGUILayout.Slider("Click Through Threshold", settings.ClickThroughThreshold, 0f, 1f);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(settings, "Change ClickThroughThreshold");
+                        settings.ClickThroughThreshold = Mathf.Clamp01(settings.ClickThroughThreshold);
+                        EditorUtility.SetDirty(settings);
+                    }
+                    EditorGUILayout.LabelField("The alpha limit required for clicks to fade into the background.", EditorStyles.miniLabel);
                     settings.TargetFPS = EditorGUILayout.IntField("Target FPS", settings.TargetFPS);
                     EditorGUILayout.LabelField("Limits the overlay rendering to the specified frames per second.", EditorStyles.miniLabel);
                     settings.TargetDisplay = EditorGUILayout.IntField("Target Display", settings.TargetDisplay);

@@ -8,7 +8,7 @@ namespace ClearBG.Runtime.Scripts.Structures
         public bool AutoInitialize = true;
         public bool DebugMode = false;
         public bool AlwaysOnTop = true;
-        public bool ClickThrough = true;
+        [Range(0f,1f)]public float ClickThroughThreshold = 0.1f;
         public int TargetFPS = 60;
         public int TargetDisplay = 0;
         private static ClearBgSettings _instance;

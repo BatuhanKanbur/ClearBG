@@ -22,9 +22,6 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         private static extern void OverlayUpdate();
         
         [DllImport("TransparentPlugin.dll")]
-        private static extern void BlitRawRGBA(IntPtr data, int width, int height);
-        
-        [DllImport("TransparentPlugin.dll")]
         private static extern void SetMonitorIndex(int monitorIndex);
         
         [DllImport("TransparentPlugin.dll")]
@@ -37,16 +34,19 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         private static extern bool IsOverlayActive();
         
         [DllImport("TransparentPlugin.dll")]
-        private static extern void GetPerformanceStats(out float avgFrameTime, out int pluginOverhead);
+        private static extern void GetPerformanceStats(out float avgFrameTime);
         
         [DllImport("TransparentPlugin.dll")]
-        private static extern void SetClickthrough(bool enable);
+        private static extern int GetPrimaryMonitorIndex();
         
         [DllImport("TransparentPlugin.dll")]
-        private static extern void UpdateClickthroughFromAlpha(float alphaValue);
+        private static extern void SetClickThrough(bool enable);
         
         [DllImport("TransparentPlugin.dll")]
-        private static extern bool IsClickthroughEnabled();
+        private static extern void UpdateClickThroughFromAlpha(float alphaValue,float alphaThreshold);
+        
+        [DllImport("TransparentPlugin.dll")]
+        private static extern bool IsClickThroughEnabled();
         #endif
         public int TargetMonitor { get; private set; }
         public bool Initialized { get; private set; }
@@ -59,7 +59,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         private RenderTexture _originalTargetTexture;
         private Texture2D _pixelReadTexture;
         private Rect _pixelReadRect = new Rect(0, 0, 1, 1);
-        private Coroutine _clickthroughCoroutine;
+        private Coroutine _clickThroughCoroutine;
         public void Initialize()
         {
             if (Initialized) return;
@@ -73,8 +73,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Debug.LogError("<color=red>Overlay initialization failed.</color>");
                 return;
             }
-            if (_settings.AlwaysOnTop)
-                SetAlwaysOnTop(true);
+            SetAlwaysOnTop(_settings.AlwaysOnTop);
             #endif
             Debug.Log("<color=green>Overlay plugin initialized.</color>");
             Prepare();
@@ -93,8 +92,8 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             _originalTargetTexture = Camera.targetTexture;
             #if !UNITY_EDITOR
             Camera.clearFlags = CameraClearFlags.SolidColor;
-            Camera.backgroundColor = new Color(0, 0, 0, 0); // Transparent black
-            Camera.allowHDR = false; // CRITICAL for transparency
+            Camera.backgroundColor = new Color(0, 0, 0, 0);
+            Camera.allowHDR = false;
             Camera.targetTexture = null;
             _pixelReadTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             #endif
@@ -119,7 +118,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             Initialized = true;
             Debug.Log("<color=green>ClearBG fully initialized with DWM transparency + Pixel-based clickthrough!</color>");
             #if !UNITY_EDITOR
-            _clickthroughCoroutine = StartCoroutine(ClickthroughLoop());
+            _clickThroughCoroutine = StartCoroutine(ClickThroughLoop());
             #endif
         }
         public void ChangeMonitor(int monitorIndex)
@@ -154,10 +153,11 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                     _pixelReadTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
                 }
                 SetOverlayActive(true);
+                SetAlwaysOnTop(_settings.AlwaysOnTop);
                 MonitorData = GetMonitorData(TargetMonitor);
-                if (_clickthroughCoroutine == null)
+                if (_clickThroughCoroutine == null)
                 {
-                    _clickthroughCoroutine = StartCoroutine(ClickthroughLoop());
+                    _clickThroughCoroutine = StartCoroutine(ClickThroughLoop());
                 }
                 Debug.Log("<color=green>Overlay enabled (DWM transparency active)</color>");
             }
@@ -166,10 +166,10 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Camera.clearFlags = _originalClearFlags;
                 Camera.backgroundColor = _originalBackgroundColor;
                 Camera.targetTexture = _originalTargetTexture;
-                if (_clickthroughCoroutine != null)
+                if (_clickThroughCoroutine != null)
                 {
-                    StopCoroutine(_clickthroughCoroutine);
-                    _clickthroughCoroutine = null;
+                    StopCoroutine(_clickThroughCoroutine);
+                    _clickThroughCoroutine = null;
                 }
                 if (_pixelReadTexture)
                 {
@@ -191,30 +191,28 @@ namespace ClearBG.Runtime.Scripts.Behaviours
             SetAlwaysOnTop(enable);
         }
 
-        public void GetPerformance(out float avgFrameTime, out int pluginOverhead)
+        public void GetPerformance(out float avgFrameTime)
         {
             #if UNITY_EDITOR
             avgFrameTime = -1f;
-            pluginOverhead = -1;
             return;
             #endif
             if (!Initialized)
             {
                 avgFrameTime = 0f;
-                pluginOverhead = -2;
                 return;
             }
-            GetPerformanceStats(out avgFrameTime, out pluginOverhead);
+            GetPerformanceStats(out avgFrameTime);
         }
         private void OnDestroy()
         {
             if (!Initialized) return;
             SceneManager.sceneLoaded -= OnActiveSceneChanged;
             #if !UNITY_EDITOR
-            if (_clickthroughCoroutine != null)
+            if (_clickThroughCoroutine != null)
             {
-                StopCoroutine(_clickthroughCoroutine);
-                _clickthroughCoroutine = null;
+                StopCoroutine(_clickThroughCoroutine);
+                _clickThroughCoroutine = null;
             }
             if (_pixelReadTexture)
             {
@@ -249,12 +247,12 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 Debug.LogError("<color=red>Main Camera does not exist.</color>");
             return Camera;
         }
-        private IEnumerator ClickthroughLoop()
+        private IEnumerator ClickThroughLoop()
         {
             while (true)
             {
                 yield return new WaitForEndOfFrame();
-                if (!Initialized || !Camera || !IsOverlayActive() || _pixelReadTexture == null)
+                if (!Initialized || !Camera || !IsOverlayActive() || !_pixelReadTexture)
                     continue;
                 var mousePos = Input.mousePosition;
                 mousePos.x = Mathf.Clamp(mousePos.x, 0, Screen.width - 1);
@@ -265,7 +263,7 @@ namespace ClearBG.Runtime.Scripts.Behaviours
                 _pixelReadTexture.Apply();
                 var pixelColor = _pixelReadTexture.GetPixel(0, 0);
                 var alphaValue = pixelColor.a;
-                UpdateClickthroughFromAlpha(alphaValue);
+                UpdateClickThroughFromAlpha(alphaValue,_settings.ClickThroughThreshold);
             }
         }
         private void LateUpdate()
