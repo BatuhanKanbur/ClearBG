@@ -126,6 +126,11 @@ namespace ClearBG.Runtime.Scripts.Managers
         /// </summary>
         public static int GetMonitorIndex => _clearBg ? _clearBg.TargetMonitor : -1;
         /// <summary>
+        /// Returns the index of the currently targeted monitor.
+        /// Returns -1 if ClearBG is not initialized.
+        /// </summary>
+        public static int GetPrimaryMonitorIndex => _clearBg ? _clearBg.GetPrimaryMonitor : -1;
+        /// <summary>
         /// Retrieves performance statistics for the ClearBG overlay rendering.
         /// </summary>
         /// <param name="cpuTimeMs">Output parameter for CPU time in milliseconds.</param>
