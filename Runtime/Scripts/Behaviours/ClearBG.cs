@@ -49,7 +49,11 @@ namespace ClearBG.Runtime.Scripts.Behaviours
         private static extern bool IsClickThroughEnabled();
         #endif
         public int TargetMonitor { get; private set; }
+        #if UNITY_STANDALONE_WIN
         public int GetPrimaryMonitor => GetPrimaryMonitorIndex();
+        #else
+        public int GetPrimaryMonitor => 0;
+        #endif
         public bool Initialized { get; private set; }
         public Camera Camera { get; private set; }
         public Canvas Canvas { get; private set; }
