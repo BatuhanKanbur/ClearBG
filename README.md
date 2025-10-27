@@ -5,125 +5,141 @@ It allows developers to render **interactive UI overlays directly on the desktop
 
 ---
 
-## 🚀 Features
 
-- 🖥️ **Transparent GPU Swapchain Rendering** — renders your Unity scene or UI as a true desktop overlay.  
-- 💡 **World Space Canvas Support Only** — designed specifically for world-space UI rendering.  
-- 🔄 **Automatic Initialization** — loads before the Unity splash screen if enabled in settings.  
-- 🧰 **Editor Simulation Support** — provides approximate monitor and taskbar data for previewing in the Unity Editor.  
-- 🌈 **Universal Render Pipeline Compatibility** — works across Built-in, URP, and HDRP.  
-- ⚙️ **Graphics API Agnostic** — supports both DirectX and OpenGL.  
-- 🪟 **Windows Only (for now)** — current build pipeline supports Windows targets exclusively.  
-- 🧩 **Debug Overlay System** — optional debug canvas for visualizing overlay boundaries and diagnostics.
+> Straight talk: **Windows-only**. Works across **all Unity render pipelines and versions** and with **any Canvas render mode** (Screen Space — Overlay/Camera, World Space). The native overlay lives above the desktop and forwards input based on pixel alpha.
 
----
+<p align="center">
+  <img alt="status" src="https://img.shields.io/badge/status-alpha-critical">
+  <img alt="unity" src="https://img.shields.io/badge/Unity-Any-blue">
+  <img alt="pipelines" src="https://img.shields.io/badge/Pipelines-Built--in%2FURP%2FHDRP-informational">
+  <img alt="platform" src="https://img.shields.io/badge/Platform-Windows-lightgrey">
+</p>
 
-## 🧠 How It Works
+## What It Does
 
-ClearBG operates by creating a **GPU Swapchain Layer** behind Unity’s main render surface.  
-Instead of rendering to the game window, it composites a transparent buffer that directly overlays the Windows desktop.  
-This allows any Unity UI rendered in World Space to appear as part of the desktop environment.
+**ClearBG** creates a transparent, always-on-top desktop overlay and renders your Unity content into it. You can target any monitor, read work-area/taskbar bounds, and toggle **pixel-alpha click-through** so mouse/keyboard events pass through fully transparent pixels to whatever is behind the overlay.
 
----
+## Features
 
-## 🏗️ Setup & Usage
+- ⚙️ **Auto-initialize (BeforeSplashScreen)** via settings, or start/stop at runtime.
+- 🪟 **Always-on-top** toggle at runtime.
+- 🖥️ **Multi-monitor**: set/get target monitor, get primary index.
+- 🧭 **Screen & taskbar rectangles** exposed in both UI and world-space terms.
+- 🖱️ **Pixel-alpha click-through** with configurable threshold.
+- 📈 **Performance stats** (avg frame time) from the native side.
+- 🧱 **Works with any Canvas render mode** (Overlay/Camera/World) and **all pipelines** (Built‑in/URP/HDRP).
 
-### 1. Add ClearBG to Your Project
+## Installation
 
-Place the `ClearBG` folder inside your `Assets` directory.  
-The typical structure should look like this:
+1. **Add the runtime scripts and the native DLL** to your project. The Windows DLL must be present at runtime (e.g., next to the exe or in `Plugins/x86_64`). The C# side calls the DLL via P/Invoke.
+2. **Create the settings asset** (auto-created on first run if missing):  
+   `Assets/Resources/ClearBGSettings.asset`.
+3. **(Optional) Prefabs**: Provide your own overlay/diagnostic canvases if you want; the manager can also bootstrap a minimal setup.
+4. **Build target**: **Windows Standalone** (x64).
 
-Assets/
-├── ClearBG/
-│ ├── Runtime/
-│ │ ├── Scripts/
-│ │ ├── Resources/
-│ │ └── Shaders/
-│ ├── Editor/
-│ ├── Plugins/
-│ │ ├── x86/
-│ │ └── x86_64/
-│ └── ClearBG.asmdef
+## Quick Start
 
-
-> 🧩 Native DLLs (for GPU swapchain and OS-level composition) should be placed under:
-> `Assets/ClearBG/Plugins/x86_64/` and marked as **"Windows Only"** in import settings.
-
----
-
-### 2. Canvas Configuration
-
-ClearBG **only supports World Space canvases**.  
-For proper rendering:
-- Set your Canvas **Render Mode** to `World Space`.  
-- Avoid using Screen Space - Overlay or Camera modes.  
-- Ensure UI elements are positioned within visible world-space boundaries.
-
----
-
-### 3. Initialization
-
-ClearBG can auto-initialize before the Unity splash screen:
+### Auto init (recommended for apps that are always overlay-driven)
 
 ```csharp
-[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-private static void Initialize()
+// In the ClearBG Settings asset:
+// - AutoInitialize: true
+// - AlwaysOnTop: true (if you want overlay to stay above everything)
+// - TargetDisplay / TargetFPS / ClickThroughThreshold: set to taste
+```
+
+### Manual control from code
+
+```csharp
+using ClearBG.Runtime.Scripts.Managers;
+using UnityEngine;
+
+public class OverlayBoot : MonoBehaviour
 {
-    _settings = ClearBgSettings.GetOrCreateSettings();
-    if (_settings.AutoInitialize)
+    void Start()
     {
-        var clearBgInstance = new GameObject("ClearBG");
-        _clearBg = clearBgInstance.AddComponent<ClearBg>();
-        _clearBg.Initialize();
+        // Ensure overlay is active
+        ClearBgManager.ActivateClearBg();
+        ClearBgManager.SetAlwaysOnTop(true);
+
+        // Optional: target the primary monitor
+        ClearBgManager.SetMonitorIndex(ClearBgManager.GetPrimaryMonitorIndex);
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.F1))
+            ClearBgManager.SetAlwaysOnTop(!ClearBgManager.IsAlwaysOnTop);
+
+        if (Input.GetKeyDown(KeyCode.F2))
+            ClearBgManager.DeactivateClearBg();
+
+        ClearBgManager.GetPerformanceStats(out var cpuMs);
+        // Use cpuMs for your own diagnostics/telemetry.
     }
 }
+```
 
+## Public API (Summary)
 
-Or manually, by calling:
+### `ClearBgManager` (static)
 
-ClearBgManager.ActivateClearBg();
+- **Lifecycle**
+  - `ActivateClearBg()` / `DeactivateClearBg()`
+  - `Initialized : bool`
+- **Z-Order**
+  - `SetAlwaysOnTop(bool enable)`  
+  - `IsAlwaysOnTop : bool`
+- **Displays / Monitors**
+  - `SetMonitorIndex(int index)`  
+  - `int GetMonitorIndex { get; }`  
+  - `int GetPrimaryMonitorIndex { get; }`
+- **Geometry**
+  - `GetTaskbarRect(out RectData ui, out RectData world)`  
+  - `GetScreenRect(out RectData ui, out RectData world)`
+- **Stats**
+  - `GetPerformanceStats(out float avgCpuFrameMs)`
+- **Settings Access**
+  - `ClearBgSettings GetSettings()`
 
+### `ClearBg` (MonoBehaviour)
 
-To disable it at runtime:
+Bridges to the native overlay DLL (initialize overlay window, per-frame update, click-through toggles, monitor selection, performance stats) and wires the Unity Camera for transparent output.
 
-ClearBgManager.DeactivateClearBg();
+### `ClearBgSettings` (ScriptableObject)
 
-🧭 API Overview
-ClearBgManager
-Method	Description
-ActivateClearBg()	Enables or creates the ClearBG overlay.
-DeactivateClearBg()	Disables the ClearBG overlay.
-SetMonitorIndex(int index)	Targets a specific monitor in multi-monitor setups.
-GetMonitorIndex	Returns the currently active monitor index.
-GetTaskbarRect(out RectData ui, out RectData world)	Returns taskbar bounds in both UI-space and world-space.
-GetScreenRect(out RectData ui, out RectData world)	Returns full screen boundaries in UI-space and world-space.
-GetDefaultMonitorData()	Provides fallback monitor info (used in Editor).
-GetSettings()	Retrieves the current runtime settings object.
+- `AutoInitialize` / `DebugMode` / `AlwaysOnTop`  
+- `ClickThroughThreshold` (0–1)  
+- `TargetFPS` / `TargetDisplay`  
+- Stored at `Assets/Resources/ClearBGSettings.asset`
 
-🧪 Debug Mode
-Enable Debug Mode in ClearBgSettings to visualize overlay boundaries.
-This spawns a runtime-only Debug_Canvas prefab (auto-loaded from Resources/Debug_Canvas.prefab).
-Ideal for alignment testing and scaling validation during development.
+## How It Works (High Level)
 
-⚙️ Platform & Technical Details
-Category	Status
-OS	Windows (Build only)
-Editor Support	Simulated (approximate monitor data)
-Graphics APIs	DirectX, OpenGL
-Render Pipelines	Built-in, URP, HDRP
-Architecture	GPU Swapchain Overlay
-Dependencies	None (self-contained runtime)
+- A borderless transparent window is created on Windows and kept on top. Unity renders into a texture that is composed into that window.
+- Each frame we can sample the pixel under the mouse and decide whether input should pass through (below the alpha threshold) or be captured by the overlay.
+- Taskbar/work-area metrics are exposed so you can avoid covering critical OS UI or position things relative to safe regions.
 
-🧩 Tips & Recommendations
-Always use World Space UI for accurate scaling.
-Avoid enabling Post Processing on the ClearBG camera.
-Use ClearBgManager.Initialized to verify system readiness before querying monitor data.
-Use GetScreenRect() or GetTaskbarRect() to dynamically align your UI elements with desktop regions.
+## Limitations / Notes
 
-🧠 Known Limitations
-Editor preview provides approximate results — accurate only in runtime builds.
-Currently supports Windows only (macOS & Linux support planned).
-Unity splash screen cannot be rendered through ClearBG’s transparent layer.
+- **Windows-only.** The native overlay depends on Win32/DWM.
+- **Native DLL required.** If the DLL is missing or fails to initialize, the overlay will not start.
+- **Security/Anti-cheat**: Desktop overlays can be flagged by some game anti-cheat systems. Use appropriately.
+
+## Troubleshooting
+
+- **Overlay doesn’t appear**
+  - Verify **Windows build** (not macOS/Linux) and that the **DLL is present**.
+  - Check logs from `ClearBgManager` for initialization errors.
+- **Click-through not working as expected**
+  - Tune `ClickThroughThreshold`. Ensure your rendered content actually has alpha < threshold where you expect pass‑through.
+- **Wrong monitor**
+  - Call `SetMonitorIndex()` explicitly. Use `GetPrimaryMonitorIndex` to fetch OS primary.
+
+## Roadmap (suggested)
+
+- Shared-texture / zero-copy paths (DXGI interop) for lower overhead.
+- Region-based click-through masks to avoid per-frame sampling.
+- Multiple overlay windows and window snapping policies.
 
 🛠️ License
 
